@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "primary_unit": "registered polygon",
+  "centroid_role": "spatial reference only",
+  "target": "SOC_Stock_0_30cm_tC_ha",
+  "model": "CatBoostRegressor",
+  "validation": "spatial GroupKFold",
+  "modules_regenerated": []
+}

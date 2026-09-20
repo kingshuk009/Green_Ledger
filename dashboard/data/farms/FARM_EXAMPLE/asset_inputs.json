@@ -1,0 +1,14 @@
+{
+  "baseline_soc_tC_ha": null,
+  "project_soc_tC_ha": null,
+  "soc_uncertainty_pct": null,
+  "model_name": "Spatial CatBoost",
+  "model_version": "replace-with-real-version",
+  "methodology_id": "VCS-VM0042",
+  "methodology_version": "2.2",
+  "status": "ESTIMATE_ONLY",
+  "limitations": [
+    "Example configuration only. Replace with real model/measurement outputs.",
+    "Do not interpret this record as an issued carbon credit."
+  ]
+}

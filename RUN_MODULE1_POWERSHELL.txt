@@ -1,0 +1,12 @@
+# In a second terminal
+cd module1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+# Install PyTorch for your machine, then:
+pip install git+https://github.com/facebookresearch/segment-anything.git
+$env:GREENLEDGER_FARM_API="http://127.0.0.1:8000"
+$env:CDSE_CLIENT_ID="YOUR_CLIENT_ID"
+$env:CDSE_CLIENT_SECRET="YOUR_CLIENT_SECRET"
+$env:SAM_CHECKPOINT="D:/green_ledger/models/sam_vit_h_4b8939.pth"
+python -c "import module1; print(module1.farm_registry.list_farms())"

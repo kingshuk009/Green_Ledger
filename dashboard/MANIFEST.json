@@ -1,0 +1,16 @@
+{
+  "project": "GreenLedger Carbon Asset Dashboard",
+  "version": "1.0.0",
+  "modules_preserved": [
+    "Module 0",
+    "Module 1"
+  ],
+  "features": [
+    "NDVI heatmap",
+    "NDVI time series",
+    "SOC validation scatter",
+    "baseline-current SOC chart",
+    "carbon asset evidence card"
+  ],
+  "status": "estimate/presentation layer"
+}

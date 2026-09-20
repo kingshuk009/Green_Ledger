@@ -1,0 +1,1 @@
+This extension contains original integration/presentation code. It does not redistribute Verra, BEE or other copyrighted standards text.

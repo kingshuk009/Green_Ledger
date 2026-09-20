@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenLedger — Register Farm</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Arial,sans-serif; background:#f4f7f4; color:#17301f; }
+    .topbar { background:#123a20; color:#fff; padding:14px 20px; }
+    .topbar h1 { margin:0; font-size:20px; }
+    .layout { display:grid; grid-template-columns:360px 1fr; min-height:calc(100vh - 52px); }
+    .panel { background:#fff; padding:20px; border-right:1px solid #ddd; }
+    .panel h2 { margin:0 0 8px; }
+    label { display:block; margin:13px 0 5px; font-weight:700; }
+    input { width:100%; padding:10px 11px; border:1px solid #bbb; border-radius:7px; }
+    button { width:100%; margin-top:9px; padding:11px; border:0; border-radius:7px; background:#1e7a3d; color:white; font-weight:700; cursor:pointer; }
+    button.secondary { background:#66736b; }
+    button.warning { background:#b97700; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #status { margin-top:14px; padding:11px; border-radius:7px; background:#eef6ef; min-height:44px; font-size:14px; line-height:1.45; }
+    #map { width:100%; height:calc(100vh - 52px); }
+    .hint,.tip { color:#5b6960; font-size:13px; line-height:1.45; }
+    .coords { margin-top:9px; max-height:130px; overflow:auto; background:#fafafa; padding:8px; border:1px solid #eee; border-radius:5px; font:11px monospace; }
+    .success { background:#e8f6ea !important; }
+    .map-help { position:absolute; z-index:10; top:70px; right:12px; background:#fff; padding:9px 12px; border-radius:7px; box-shadow:0 1px 6px rgba(0,0,0,.18); font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="topbar"><h1>🌱 GreenLedger — Register Your Land</h1></div>
+  <div class="layout">
+    <aside class="panel">
+      <h2>Land Registration</h2>
+      <p class="hint">Use the OpenFreeMap/OpenStreetMap map to trace the field boundary. The boundary is stored once and reused by Module 1 for future Sentinel-2 monitoring.</p>
+
+      <label for="farmer_name">Land Owner Name</label>
+      <input id="farmer_name" placeholder="e.g. Raj Kumar" />
+      <label for="farm_name">Land Name</label>
+      <input id="farm_name" placeholder="e.g. North Field" />
+
+      <button id="drawBtn">Start Drawing</button>
+      <button id="undoBtn" class="secondary" disabled>Undo Last Point</button>
+      <button id="finishBtn" class="warning" disabled>Finish Boundary</button>
+      <button id="clearBtn" class="secondary" disabled>Clear Boundary</button>
+      <button id="saveBtn" disabled>Save Farm Boundary</button>
+
+      <div id="status">Loading OpenFreeMap…</div>
+      <div id="coords" class="coords" hidden></div>
+      <p class="tip">Use the satellite/aerial imagery source available in the map style when tracing the field. The saved geometry is GeoJSON in EPSG:4326.</p>
+    </aside>
+    <main id="map"></main>
+    <div class="map-help">Click <b>Start Drawing</b>, then click at least 3 points around the Land.</div>
+  </div>
+
+  <script type="module">
+    import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs';
+
+    let map = null;
+    let drawing = false;
+    let points = [];
+    let polygonSourceReady = false;
+
+    const $ = id => document.getElementById(id);
+    const status = $('status');
+    const setStatus = msg => status.innerHTML = msg;
+
+    function updateButtons() {
+      $('undoBtn').disabled = points.length === 0;
+      $('finishBtn').disabled = points.length < 3;
+      $('clearBtn').disabled = points.length === 0;
+      $('saveBtn').disabled = points.length < 3;
+    }
+
+    function updateCoordinates() {
+      const box = $('coords');
+      if (!points.length) { box.hidden = true; box.textContent = ''; return; }
+      box.hidden = false;
+      box.textContent = points.map((p,i) => `${i+1}: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`).join('\n');
+    }
+
+    function polygonGeoJSON() {
+      const ring = points.map(p => [p.lng, p.lat]);
+      if (ring.length >= 3) ring.push(ring[0]);
+      return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } };
+    }
+
+    function updateMapGeometry() {
+      if (!map || !polygonSourceReady) return;
+      const fc = polygonGeoJSON();
+      const source = map.getSource('farm-boundary');
+      source.setData(points.length >= 3 ? fc : { type:'FeatureCollection', features:[] });
+
+      const line = {
+        type:'Feature', properties:{}, geometry:{type:'LineString', coordinates: points.map(p => [p.lng,p.lat])}
+      };
+      map.getSource('farm-outline').setData(points.length >= 2 ? line : {type:'FeatureCollection',features:[]});
+
+      const pts = {
+        type:'FeatureCollection', features: points.map(p => ({
+          type:'Feature', properties:{}, geometry:{type:'Point',coordinates:[p.lng,p.lat]}
+        }))
+      };
+      map.getSource('farm-points').setData(pts);
+    }
+
+    function clearBoundary() {
+      points = [];
+      drawing = false;
+      updateMapGeometry();
+      updateCoordinates();
+      updateButtons();
+      setStatus('Boundary cleared.');
+    }
+
+    function startDrawing() {
+      points = [];
+      drawing = true;
+      updateMapGeometry();
+      updateCoordinates();
+      updateButtons();
+      setStatus('Drawing mode active — click around the farm boundary.');
+    }
+
+    function undoPoint() {
+      if (!points.length) return;
+      points.pop();
+      updateMapGeometry();
+      updateCoordinates();
+      updateButtons();
+    }
+
+    function finishBoundary() {
+      if (points.length < 3) {
+        setStatus('❌ At least 3 points are required.');
+        return;
+      }
+      drawing = false;
+      updateMapGeometry();
+      updateCoordinates();
+      updateButtons();
+      setStatus('✅ Boundary created. You can click vertices to continue editing by restarting the drawing if needed, then save.');
+    }
+
+    async function saveFarm() {
+      const farmer_name = $('farmer_name').value.trim();
+      const farm_name = $('farm_name').value.trim();
+      if (!farmer_name || !farm_name || points.length < 3) {
+        setStatus('❌ Enter names and finish the boundary first.');
+        return;
+      }
+      setStatus('Saving farm boundary…');
+      try {
+        const res = await fetch('/api/farms', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({farmer_name, farm_name, geometry: polygonGeoJSON().geometry})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Could not save farm');
+        setStatus(`✅ Farm registered.<br><b>Farm ID:</b> ${data.farm_id}<br><b>Area:</b> ${data.area_ha} ha<br><br>Module 1 can now monitor this farm automatically.`);
+        status.classList.add('success');
+        $('saveBtn').disabled = true;
+      } catch (err) {
+        setStatus(`❌ ${err.message}`);
+      }
+    }
+
+    function initMap() {
+      map = new maplibregl.Map({
+        container:'map',
+        style:'https://tiles.openfreemap.org/styles/bright',
+        center:[88.3639,22.5726],
+        zoom:15,
+        attributionControl:true
+      });
+
+      map.addControl(new maplibregl.NavigationControl(), 'top-right');
+      map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+
+      map.on('load', () => {
+        map.addSource('farm-boundary', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
+        map.addSource('farm-outline', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
+        map.addSource('farm-points', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
+
+        map.addLayer({id:'farm-fill', type:'fill', source:'farm-boundary', paint:{'fill-color':'#34a853','fill-opacity':0.28}});
+        map.addLayer({id:'farm-border', type:'line', source:'farm-boundary', paint:{'line-color':'#1e7a3d','line-width':3}});
+        map.addLayer({id:'farm-outline-line', type:'line', source:'farm-outline', paint:{'line-color':'#1e7a3d','line-width':3,'line-dasharray':[1,1]}});
+        map.addLayer({id:'farm-points-layer', type:'circle', source:'farm-points', paint:{'circle-radius':5,'circle-color':'#1e7a3d','circle-stroke-width':2,'circle-stroke-color':'#fff'}});
+
+        polygonSourceReady = true;
+        updateMapGeometry();
+        setStatus('✅ OpenFreeMap is ready. Use Start Drawing to mark the farm.');
+      });
+
+      map.on('click', e => {
+        if (!drawing) return;
+        points.push({lat:e.lngLat.lat, lng:e.lngLat.lng});
+        updateMapGeometry();
+        updateCoordinates();
+        updateButtons();
+      });
+    }
+
+    $('drawBtn').onclick = startDrawing;
+    $('undoBtn').onclick = undoPoint;
+    $('finishBtn').onclick = finishBoundary;
+    $('clearBtn').onclick = clearBoundary;
+    $('saveBtn').onclick = saveFarm;
+
+    initMap();
+  </script>
+</body>
+</html>

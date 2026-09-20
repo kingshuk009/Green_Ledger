@@ -1,0 +1,26 @@
+{
+  "FARM_20260901154658031325": {
+    "last_observation_datetime": "2026-08-26T04:52:26.906000+00:00",
+    "last_scene_id": "S2C_MSIL2A_20260826T043701_N0512_R033_T45QXE_20260826T093612.SAFE",
+    "last_image_path": "data\\observations\\satellite\\FARM_20260901154658031325\\FARM_20260901154658031325_2026-08-26_32645.tif",
+    "last_carbon_score": 0.0
+  },
+  "FARM_20260908045130704357": {
+    "last_observation_datetime": "2026-09-15T04:52:13.602000+00:00",
+    "last_scene_id": "S2C_MSIL2A_20260915T043701_N0512_R033_T45QXF_20260915T074111.SAFE",
+    "last_image_path": "data\\observations\\satellite\\FARM_20260908045130704357\\FARM_20260908045130704357_2026-09-15_32645.tif",
+    "last_carbon_score": 0.275,
+    "last_cloud_cover_pct": 20.47,
+    "last_valid_pixel_pct": 100.0,
+    "quality_score": 0.87718
+  },
+  "FARM_20260901171202851780": {
+    "last_observation_datetime": "2026-09-15T04:52:31.497000+00:00",
+    "last_scene_id": "S2C_MSIL2A_20260915T043701_N0512_R033_T45QWE_20260915T074111.SAFE",
+    "last_image_path": "data\\observations\\satellite\\FARM_20260901171202851780\\FARM_20260901171202851780_2026-09-15_32645.tif",
+    "last_carbon_score": 0.414,
+    "last_cloud_cover_pct": 12.67,
+    "last_valid_pixel_pct": 100.0,
+    "quality_score": 0.92398
+  }
+}

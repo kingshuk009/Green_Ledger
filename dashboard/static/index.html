@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GreenLedger Carbon Asset</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4"></script>
+<style>
+body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f4f7f5;color:#17221c}.wrap{max-width:1180px;margin:auto;padding:28px}.hero{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.tag{font-size:12px;font-weight:700;letter-spacing:.08em;color:#48705a}.status{padding:9px 13px;border-radius:999px;background:#fff;border:1px solid #d7e2da;font-weight:700}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:18px}.card{background:#fff;border:1px solid #dde7df;border-radius:16px;padding:20px;box-shadow:0 4px 16px #193b2210}.wide{grid-column:1/-1}.metric{font-size:30px;font-weight:800;margin-top:5px}.muted{color:#65746b;font-size:13px}.small{font-size:12px;color:#6a776f}.chart{height:310px}.asset{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.asset>div{padding:14px;border:1px solid #e0e8e2;border-radius:12px}.asset .v{font-size:21px;font-weight:750}.evidence{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ndvi{width:100%;border-radius:12px;min-height:240px;object-fit:contain;background:#eef3ef}.notice{padding:13px;border-left:4px solid #6b8b73;background:#f2f6f3;border-radius:8px}.error{color:#9b3333}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef4ef;font-size:12px;margin:2px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.asset{grid-template-columns:repeat(2,1fr)}.evidence{grid-template-columns:1fr}}
+</style></head>
+<body><div class="wrap">
+<div class="hero"><div><div class="tag">GREENLEDGER · CARBON ASSET</div><h1 id="title">Farm __FARM_ID__</h1><div class="muted">Evidence-oriented presentation layer · estimate, not issued credit</div></div><div id="status" class="status">Loading…</div></div>
+<div id="msg"></div>
+<div class="grid">
+<section class="card wide"><h2>Carbon Asset Summary</h2><div class="asset" id="asset"></div></section>
+<section class="card"><h2>🌱 Farm greenery</h2><div class="evidence"><div><div class="muted">Latest mean NDVI</div><div class="metric" id="ndvi">—</div><div class="muted">Vegetation coverage</div><div class="metric" id="coverage">—</div></div><div><img id="ndviImg" class="ndvi" alt="NDVI heatmap"><div class="small">Spatial NDVI map is shown only when a real polygon-clipped NDVI array is available.</div></div></div></section>
+<section class="card"><h2>📈 NDVI over time</h2><div class="chart"><canvas id="ndviChart"></canvas></div></section>
+<section class="card wide"><h2>🌍 Actual vs predicted SOC</h2><div id="valText" class="notice">Validation data not loaded.</div><div class="chart"><canvas id="socChart"></canvas></div></section>
+<section class="card"><h2>Baseline vs current SOC</h2><div class="chart"><canvas id="baselineChart"></canvas></div></section>
+<section class="card"><h2>Model & spatial evidence</h2><div id="modelInfo"></div></section>
+<section class="card wide"><h2>What makes this asset explainable?</h2><div class="notice">GreenLedger does not rely on one number. The dashboard shows the satellite-derived greenery evidence, the historical observation trend, SOC model validation, baseline-to-current SOC change, spatial-neighbor evidence, uncertainty, and methodology/status information.</div><p class="small">A carbon asset estimate is not automatically an official carbon credit. Verification and issuance remain external to this software.</p></section>
+</div></div>
+<script>
+const FARM='__FARM_ID__';
+let ndviChart,socChart,baselineChart;
+const fmt=(v,d=2)=>v==null?'—':Number(v).toFixed(d);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function get(p){let r=await fetch(p);if(!r.ok)throw Error(await r.text());return r.json()}
+function card(label,value,unit=''){return `<div><div class="muted">${label}</div><div class="v">${value}${unit?` <span class="small">${unit}</span>`:''}</div></div>`}
+async function load(){
+ try{
+  const [a,o,v,pts]=await Promise.all([get('/api/asset/'+FARM),get('/api/observations/'+FARM),get('/api/validation'),get('/api/validation/points')]);
+  document.getElementById('status').textContent=a.status||'ESTIMATED'; document.getElementById('title').textContent='Farm '+FARM+(a.farm_name?' · '+a.farm_name:'');
+  document.getElementById('asset').innerHTML=card('Area',fmt(a.area_ha),'ha')+card('Estimated SOC',fmt(a.project_soc_tC_ha),'tC/ha')+card('SOC change',fmt(a.soc_change_tC_ha),'tC/ha')+card('Estimated carbon outcome',fmt(a.estimated_removal_tCO2e),'tCO₂e')+card('Conservative outcome',fmt(a.conservative_removal_tCO2e),'tCO₂e')+card('Uncertainty',fmt(a.uncertainty_pct),'%')+card('Carbon Score',fmt(a.carbon_score_100),'/100')+card('NDVI observations',a.ndvi_observation_count);
+  document.getElementById('ndvi').textContent=fmt(a.latest_mean_ndvi,3); document.getElementById('coverage').textContent=fmt(a.latest_vegetation_coverage_pct,1)+'%';
+  const img=document.getElementById('ndviImg'); img.src='/api/ndvi/'+FARM+'.png'; img.onerror=()=>{img.style.display='none'};
+  new Chart(document.getElementById('ndviChart'),{type:'line',data:{labels:o.map(x=>x.date||'unknown'),datasets:[{label:'Mean NDVI',data:o.map(x=>x.mean_ndvi)}]},options:{responsive:true,maintainAspectRatio:false}});ndviChart=true;
+  if(v.available!==false && v.rows){document.getElementById('valText').innerHTML=`Rows: <b>${v.rows}</b> · MAE: <b>${fmt(v.mae_tC_ha)}</b> tC/ha · RMSE: <b>${fmt(v.rmse_tC_ha)}</b> tC/ha · R²: <b>${fmt(v.r2,3)}</b>`} else document.getElementById('valText').textContent='Add a real validation CSV and run scripts/evaluate_soc.py to populate this evidence.';
+  if(pts.length){new Chart(document.getElementById('socChart'),{type:'scatter',data:{datasets:[{label:'Actual vs predicted SOC',data:pts.map(x=>({x:x.actual,y:x.predicted}))}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Actual SOC (tC/ha)'}},y:{title:{display:true,text:'Predicted SOC (tC/ha)'}}}}});}
+  if(a.baseline_soc_tC_ha!=null && a.project_soc_tC_ha!=null)new Chart(document.getElementById('baselineChart'),{type:'bar',data:{labels:['Baseline','Current estimate'],datasets:[{label:'SOC stock (tC/ha)',data:[a.baseline_soc_tC_ha,a.project_soc_tC_ha]}]},options:{responsive:true,maintainAspectRatio:false}});
+  document.getElementById('modelInfo').innerHTML=`<p><b>Model:</b> ${esc(a.model_name||'Not supplied')}</p><p><b>Version:</b> ${esc(a.model_version||'Not supplied')}</p><p><b>Validation MAE:</b> ${fmt(a.model_validation_mae_tC_ha)} tC/ha</p><p><b>Validation RMSE:</b> ${fmt(a.model_validation_rmse_tC_ha)} tC/ha</p><p><b>Validation R²:</b> ${fmt(a.model_validation_r2,3)}</p><p><b>Spatial neighbors:</b> ${a.spatial_neighbor_count||0}</p><p><b>Nearest observed point:</b> ${fmt(a.nearest_neighbor_km)} km</p><p><b>Spatial weighted SOC:</b> ${fmt(a.spatial_weighted_soc_tC_ha)} tC/ha</p><p><b>Methodology:</b> ${esc(a.methodology_id||'Not supplied')} ${esc(a.methodology_version||'')}</p>`;
+ }catch(e){document.getElementById('msg').innerHTML='<p class="error">'+esc(e.message)+'</p>'}
+}
+load();
+</script></body></html>

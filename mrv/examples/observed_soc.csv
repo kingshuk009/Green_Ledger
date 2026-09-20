@@ -1,0 +1,4 @@
+lat,lon,SOC_percent,Bulk_Density_g_cm3,Soil_Depth_cm,Coarse_Fragment_pct,Crop_Type,Soil_Type,Season,SOC_Stock_0_30cm_tC_ha
+22.5726,88.3639,0.82,1.35,30,5,Rice,Alluvial,Kharif,31.52
+22.58,88.37,1.05,1.30,30,3,Rice,Alluvial,Kharif,40.95
+22.56,88.35,0.74,1.42,30,7,Wheat,Alluvial,Rabi,29.54
