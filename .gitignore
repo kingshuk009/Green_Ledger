@@ -7,3 +7,7 @@ __pycache__/
 *.pth 
 *.h5 
 *.bin 
+*.pth 
+*.tif 
+*.db 
+.env 
