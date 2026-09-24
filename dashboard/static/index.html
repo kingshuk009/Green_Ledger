@@ -19,7 +19,7 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f4f7f5;col
 <section class="card wide"><h2>What makes this asset explainable?</h2><div class="notice">GreenLedger does not rely on one number. The dashboard shows the satellite-derived greenery evidence, the historical observation trend, SOC model validation, baseline-to-current SOC change, spatial-neighbor evidence, uncertainty, and methodology/status information.</div><p class="small">A carbon asset estimate is not automatically an official carbon credit. Verification and issuance remain external to this software.</p></section>
 </div></div>
 <script>
-const FARM='__FARM_ID__';
+const FARM=new URLSearchParams(window.location.search).get('farm_id')||'__FARM_ID__';
 let ndviChart,socChart,baselineChart;
 const fmt=(v,d=2)=>v==null?'—':Number(v).toFixed(d);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

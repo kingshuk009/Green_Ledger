@@ -2102,3 +2102,10 @@ print("   Note: Module 1 reads farms from Module 0's database-backed API.")
 print("   Note: Copernicus OAuth tokens are obtained automatically when needed.")
 print("   Note: SAM is loaded once and reused for inference; no retraining per observation.")
 print("   Note: Each farm check compares the newest scene with the selected observation and keeps the better-quality image.")
+if __name__ == "__main__":
+    import sys
+    if "--scheduler" in sys.argv:
+        run_scheduler()
+    else:
+        print("\n🚀 Running all farms once...")
+        run_all_registered_farms_once()

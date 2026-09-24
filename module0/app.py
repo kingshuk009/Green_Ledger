@@ -285,3 +285,96 @@ def latest_observation(farm_id: str):
     if row is None:
         return {"farm_id": farm_id, "observation": None}
     return {"farm_id": farm_id, "observation": dict(row)}
+# Add these endpoints to the END of app.py in module0
+# (before the last line)
+
+# ── MRV endpoints ─────────────────────────────────────────────
+
+class ProjectCreate(BaseModel):
+    baseline_year: int = 2020
+    project_start: str = ""
+    project_end: str = ""
+    methodology: str = "IPCC Tier-1"
+    carbon_standard: str = "Voluntary"
+    notes: str = ""
+
+class ManagementCreate(BaseModel):
+    farming_practice: str = "Conventional"
+    tillage_type: str = "Conventional"
+    irrigation: str = "Rainfed"
+    fertilizer_use: str = "Synthetic"
+    cover_crops: bool = False
+    agroforestry: bool = False
+    notes: str = ""
+
+
+@app.get("/api/farms/{farm_id}/project")
+def get_project(farm_id: str):
+    with get_db() as conn:
+        farm = conn.execute(
+            "SELECT * FROM farms WHERE farm_id = ?", (farm_id,)
+        ).fetchone()
+    if farm is None:
+        raise HTTPException(404, "Farm not found.")
+    # Return default project config derived from farm data
+    return {
+        "farm_id": farm_id,
+        "baseline_year": 2020,
+        "project_start": farm["created_at"][:10],
+        "project_end": "",
+        "methodology": "IPCC Tier-1 / SILVIA-SAM",
+        "carbon_standard": "Voluntary",
+        "area_ha": farm["area_ha"],
+        "notes": "Auto-generated from Module 0 farm registration."
+    }
+
+
+@app.get("/api/farms/{farm_id}/management")
+def get_management(farm_id: str):
+    with get_db() as conn:
+        farm = conn.execute(
+            "SELECT * FROM farms WHERE farm_id = ?", (farm_id,)
+        ).fetchone()
+    if farm is None:
+        raise HTTPException(404, "Farm not found.")
+    # Return default management config
+    return {
+        "farm_id": farm_id,
+        "farming_practice": "Conventional",
+        "tillage_type": "Conventional",
+        "irrigation": "Rainfed",
+        "fertilizer_use": "Synthetic",
+        "cover_crops": False,
+        "agroforestry": False,
+        "notes": "Default management profile. Update via Module 0 UI."
+    }
+
+
+@app.post("/api/farms/{farm_id}/project")
+def update_project(farm_id: str, payload: ProjectCreate):
+    with get_db() as conn:
+        farm = conn.execute(
+            "SELECT farm_id FROM farms WHERE farm_id = ?", (farm_id,)
+        ).fetchone()
+    if farm is None:
+        raise HTTPException(404, "Farm not found.")
+    return {
+        "farm_id": farm_id,
+        "status": "updated",
+        **payload.dict()
+    }
+
+
+@app.post("/api/farms/{farm_id}/management")
+def update_management(farm_id: str, payload: ManagementCreate):
+    with get_db() as conn:
+        farm = conn.execute(
+            "SELECT farm_id FROM farms WHERE farm_id = ?", (farm_id,)
+        ).fetchone()
+    if farm is None:
+        raise HTTPException(404, "Farm not found.")
+    return {
+        "farm_id": farm_id,
+        "status": "updated",
+        **payload.dict()
+    }

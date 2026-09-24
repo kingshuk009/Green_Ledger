@@ -11,3 +11,6 @@ __pycache__/
 *.tif 
 *.db 
 .env 
+.venv/
+.env.txt
+module0/data/farms/*.geojson

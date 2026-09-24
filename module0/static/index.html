@@ -160,6 +160,7 @@
         setStatus(`✅ Farm registered.<br><b>Farm ID:</b> ${data.farm_id}<br><b>Area:</b> ${data.area_ha} ha<br><br>Module 1 can now monitor this farm automatically.`);
         status.classList.add('success');
         $('saveBtn').disabled = true;
+           setTimeout(() => { window.open(`http://127.0.0.1:8010/static/index.html?farm_id=${data.farm_id}`, '_blank'); }, 2000);
       } catch (err) {
         setStatus(`❌ ${err.message}`);
       }
