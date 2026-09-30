@@ -11,6 +11,14 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f4f7f5;col
 <div id="msg"></div>
 <div class="grid">
 <section class="card wide"><h2>Carbon Asset Summary</h2><div class="asset" id="asset"></div></section>
+<section class="card wide">
+  <h2>🌾 Farm & Soil Information</h2>
+  <div class="asset" id="farmInfo"></div>
+</section>
+<section class="card wide">
+  <h2>🧪 SOC Model Result</h2>
+  <div class="asset" id="socInfo"></div>
+</section>
 <section class="card"><h2>🌱 Farm greenery</h2><div class="evidence"><div><div class="muted">Latest mean NDVI</div><div class="metric" id="ndvi">—</div><div class="muted">Vegetation coverage</div><div class="metric" id="coverage">—</div></div><div><img id="ndviImg" class="ndvi" alt="NDVI heatmap"><div class="small">Spatial NDVI map is shown only when a real polygon-clipped NDVI array is available.</div></div></div></section>
 <section class="card"><h2>📈 NDVI over time</h2><div class="chart"><canvas id="ndviChart"></canvas></div></section>
 <section class="card wide"><h2>🌍 Actual vs predicted SOC</h2><div id="valText" class="notice">Validation data not loaded.</div><div class="chart"><canvas id="socChart"></canvas></div></section>
@@ -27,17 +35,47 @@ async function get(p){let r=await fetch(p);if(!r.ok)throw Error(await r.text());
 function card(label,value,unit=''){return `<div><div class="muted">${label}</div><div class="v">${value}${unit?` <span class="small">${unit}</span>`:''}</div></div>`}
 async function load(){
  try{
-  const [a,o,v,pts]=await Promise.all([get('/api/asset/'+FARM),get('/api/observations/'+FARM),get('/api/validation'),get('/api/validation/points')]);
+const [a,o,v,pts,csv]=await Promise.all([
+  get('/api/asset/'+FARM),
+  get('/api/observations/'+FARM),
+  get('/api/validation'),
+  get('/api/validation/points'),
+  fetch('/api/csv-farm/'+FARM)
+    .then(r => r.ok ? r.json() : null)
+]);
   document.getElementById('status').textContent=a.status||'ESTIMATED'; document.getElementById('title').textContent='Farm '+FARM+(a.farm_name?' · '+a.farm_name:'');
   document.getElementById('asset').innerHTML=card('Area',fmt(a.area_ha),'ha')+card('Estimated SOC',fmt(a.project_soc_tC_ha),'tC/ha')+card('SOC change',fmt(a.soc_change_tC_ha),'tC/ha')+card('Estimated carbon outcome',fmt(a.estimated_removal_tCO2e),'tCO₂e')+card('Conservative outcome',fmt(a.conservative_removal_tCO2e),'tCO₂e')+card('Uncertainty',fmt(a.uncertainty_pct),'%')+card('Carbon Score',fmt(a.carbon_score_100),'/100')+card('NDVI observations',a.ndvi_observation_count);
-  document.getElementById('ndvi').textContent=fmt(a.latest_mean_ndvi,3); document.getElementById('coverage').textContent=fmt(a.latest_vegetation_coverage_pct,1)+'%';
-  const img=document.getElementById('ndviImg'); img.src='/api/ndvi/'+FARM+'.png'; img.onerror=()=>{img.style.display='none'};
-  new Chart(document.getElementById('ndviChart'),{type:'line',data:{labels:o.map(x=>x.date||'unknown'),datasets:[{label:'Mean NDVI',data:o.map(x=>x.mean_ndvi)}]},options:{responsive:true,maintainAspectRatio:false}});ndviChart=true;
+  document.getElementById('ndvi').textContent=fmt(a.latest_mean_ndvi,3); 
+  document.getElementById('coverage').textContent=fmt(a.latest_vegetation_coverage_pct,1)+'%';
+  if (csv) {
+  document.getElementById('farmInfo').innerHTML =
+    card('Crop', csv.Crop || '—') +
+    card('Soil Type', csv.Soil_Type || '—') +
+    card('Irrigation', csv.Irrigation_Type || '—') +
+    card('Fertilizer', fmt(csv['Fertilizer_Used(tons)'],2), 'tons') +
+    card('Pesticide', fmt(csv['Pesticide_Used(kg)'],2), 'kg') +
+    card('Yield', fmt(csv['Yield(tons)'],2), 'tons') +
+    card('Water Usage', fmt(csv['Water_Usage(cubic meters)'],0), 'm³') +
+    card('SOC', fmt(csv['SOC(%)'],2), '%') +
+    card('Bulk Density', fmt(csv['Bulk_Density(g/cm³)'],2), 'g/cm³') +
+    card('Depth', fmt(csv['Depth(cm)'],1), 'cm') +
+    card('Coarse Fragment', fmt(csv['Coarse_Fragment(%)'],1), '%') +
+    card('SOC Stock', fmt(csv['SOC_Stock(tC/ha)'],2), 'tC/ha');
+} else {
+  document.getElementById('farmInfo').innerHTML =
+    '<div class="notice">Manual farm/soil inputs are used for this polygon farm.</div>';
+}
+    if (ndviChart) ndviChart.destroy();
+    if (socChart) socChart.destroy();
+    if (baselineChart) baselineChart.destroy();
+const img=document.getElementById('ndviImg'); img.src='/api/ndvi/'+FARM+'.png'; img.onerror=()=>{img.style.display='none'};
+  ndviChart = new Chart(document.getElementById('ndviChart'),{type:'line',data:{labels:o.map(x=>x.date||'unknown'),datasets:[{label:'Mean NDVI',data:o.map(x=>x.mean_ndvi)}]},options:{responsive:true,maintainAspectRatio:false}});
   if(v.available!==false && v.rows){document.getElementById('valText').innerHTML=`Rows: <b>${v.rows}</b> · MAE: <b>${fmt(v.mae_tC_ha)}</b> tC/ha · RMSE: <b>${fmt(v.rmse_tC_ha)}</b> tC/ha · R²: <b>${fmt(v.r2,3)}</b>`} else document.getElementById('valText').textContent='Add a real validation CSV and run scripts/evaluate_soc.py to populate this evidence.';
-  if(pts.length){new Chart(document.getElementById('socChart'),{type:'scatter',data:{datasets:[{label:'Actual vs predicted SOC',data:pts.map(x=>({x:x.actual,y:x.predicted}))}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Actual SOC (tC/ha)'}},y:{title:{display:true,text:'Predicted SOC (tC/ha)'}}}}});}
-  if(a.baseline_soc_tC_ha!=null && a.project_soc_tC_ha!=null)new Chart(document.getElementById('baselineChart'),{type:'bar',data:{labels:['Baseline','Current estimate'],datasets:[{label:'SOC stock (tC/ha)',data:[a.baseline_soc_tC_ha,a.project_soc_tC_ha]}]},options:{responsive:true,maintainAspectRatio:false}});
+  if(pts.length){socChart = new Chart(document.getElementById('socChart'),{type:'scatter',data:{datasets:[{label:'Actual vs predicted SOC',data:pts.map(x=>({x:x.actual,y:x.predicted}))}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Actual SOC (tC/ha)'}},y:{title:{display:true,text:'Predicted SOC (tC/ha)'}}}}});}
+  if(a.baseline_soc_tC_ha!=null && a.project_soc_tC_ha!=null)baselineChart = new Chart(document.getElementById('baselineChart'),{type:'bar',data:{labels:['Baseline','Current estimate'],datasets:[{label:'SOC stock (tC/ha)',data:[a.baseline_soc_tC_ha,a.project_soc_tC_ha]}]},options:{responsive:true,maintainAspectRatio:false}});
   document.getElementById('modelInfo').innerHTML=`<p><b>Model:</b> ${esc(a.model_name||'Not supplied')}</p><p><b>Version:</b> ${esc(a.model_version||'Not supplied')}</p><p><b>Validation MAE:</b> ${fmt(a.model_validation_mae_tC_ha)} tC/ha</p><p><b>Validation RMSE:</b> ${fmt(a.model_validation_rmse_tC_ha)} tC/ha</p><p><b>Validation R²:</b> ${fmt(a.model_validation_r2,3)}</p><p><b>Spatial neighbors:</b> ${a.spatial_neighbor_count||0}</p><p><b>Nearest observed point:</b> ${fmt(a.nearest_neighbor_km)} km</p><p><b>Spatial weighted SOC:</b> ${fmt(a.spatial_weighted_soc_tC_ha)} tC/ha</p><p><b>Methodology:</b> ${esc(a.methodology_id||'Not supplied')} ${esc(a.methodology_version||'')}</p>`;
  }catch(e){document.getElementById('msg').innerHTML='<p class="error">'+esc(e.message)+'</p>'}
 }
 load();
+setInterval(load, 10000);
 </script></body></html>

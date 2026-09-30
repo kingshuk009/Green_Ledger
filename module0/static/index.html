@@ -38,7 +38,14 @@
       <input id="farmer_name" placeholder="e.g. Raj Kumar" />
       <label for="farm_name">Land Name</label>
       <input id="farm_name" placeholder="e.g. North Field" />
+      <hr style="margin:20px 0;border:0;border-top:1px solid #ddd;">
 
+      <label for="dataset_farm_id">Existing Farm ID</label>
+      <input id="dataset_farm_id" placeholder="e.g. FARM-001" />
+
+      <button id="openDatasetBtn" class="secondary">
+      Open CSV Farm Dashboard
+      </button>
       <button id="drawBtn">Start Drawing</button>
       <button id="undoBtn" class="secondary" disabled>Undo Last Point</button>
       <button id="finishBtn" class="warning" disabled>Finish Boundary</button>
@@ -202,13 +209,85 @@
       });
     }
 
-    $('drawBtn').onclick = startDrawing;
-    $('undoBtn').onclick = undoPoint;
-    $('finishBtn').onclick = finishBoundary;
-    $('clearBtn').onclick = clearBoundary;
-    $('saveBtn').onclick = saveFarm;
+    
+    async function loadDatasetFarms() {
+  try {
+    const response = await fetch('/api/dataset/farms');
+    const data = await response.json();
 
-    initMap();
+    if (!response.ok) {
+      throw new Error(data.detail || 'Could not load CSV farms');
+    }
+
+    data.farms.forEach(farm => {
+      const marker = new maplibregl.Marker()
+        .setLngLat([farm.longitude, farm.latitude])
+        .setPopup(
+          new maplibregl.Popup({ offset: 25 }).setHTML(
+            `<b>${farm.farm_id}</b><br>
+             Crop: ${farm.crop || '—'}<br>
+             Soil: ${farm.soil_type || '—'}<br>
+             <button
+               style="margin-top:8px;padding:6px 10px;
+               border:0;border-radius:5px;
+               background:#1e7a3d;color:white;cursor:pointer;"
+               onclick="window.open(
+                 'http://127.0.0.1:8010/dashboard/${farm.farm_id}',
+                 '_blank'
+               )">
+               Open Dashboard
+             </button>`
+          )
+        )
+        .addTo(map);
+    });
+
+    setStatus(`✅ Map ready. ${data.count} CSV farms loaded.`);
+  } catch (error) {
+    console.error('CSV farm loading error:', error);
+    setStatus(`⚠️ CSV farms could not be loaded: ${error.message}`);
+  }
+}
+
+$('drawBtn').onclick = startDrawing;
+$('undoBtn').onclick = undoPoint;
+$('finishBtn').onclick = finishBoundary;
+$('clearBtn').onclick = clearBoundary;
+$('saveBtn').onclick = saveFarm;
+
+$('openDatasetBtn').onclick = async () => {
+  const farmId = $('dataset_farm_id').value.trim();
+
+  if (!farmId) {
+    setStatus('❌ Enter a Farm ID first.');
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `/api/dataset/farms/${encodeURIComponent(farmId)}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Farm ID not found');
+    }
+
+    window.open(
+      `http://127.0.0.1:8010/dashboard/${encodeURIComponent(farmId)}`,
+      '_blank'
+    );
+  } catch (error) {
+    setStatus(`❌ ${error.message}`);
+  }
+};
+
+initMap();
+
+map.on('load', () => {
+  loadDatasetFarms();
+});
   </script>
 </body>
 </html>

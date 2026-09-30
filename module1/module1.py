@@ -27,6 +27,7 @@ import matplotlib.gridspec as gridspec
 from PIL import Image
 import rasterio
 from rasterio.enums import Resampling
+from rasterio.features import geometry_mask
 warnings.filterwarnings('ignore')
 
 # SAM imports
@@ -1537,7 +1538,7 @@ class ObservationConfig:
     CDSE_CATALOG_URL = "https://sh.dataspace.copernicus.eu/catalog/v1/search"
     CDSE_PROCESS_URL = "https://sh.dataspace.copernicus.eu/process/v1"
     COLLECTION = "sentinel-2-l2a"
-    MAX_CLOUD_COVER = float(os.getenv("S2_MAX_CLOUD_COVER", "20"))
+    MAX_CLOUD_COVER = float(os.getenv("S2_MAX_CLOUD_COVER", "25"))
     CHECK_INTERVAL_HOURS = float(os.getenv("S2_CHECK_INTERVAL_HOURS", "24"))
     RESOLUTION_M = float(os.getenv("S2_RESOLUTION_M", "10"))
     MIN_IMAGE_PIXELS = int(os.getenv("S2_MIN_IMAGE_PIXELS", "64"))
@@ -1584,6 +1585,69 @@ class FarmRegistryClient:
         }
 
 farm_registry = FarmRegistryClient(obs_cfg.FARM_API)
+class CSVDatasetRegistryClient:
+    def __init__(self, farm_api):
+        self.farm_api = farm_api
+
+    def list_farms(self):
+        r = requests.get(
+            f"{self.farm_api}/api/dataset/farms",
+            timeout=60
+        )
+        r.raise_for_status()
+        return r.json().get("farms", [])
+
+    def get_farm(self, farm_id):
+        r = requests.get(
+            f"{self.farm_api}/api/dataset/farms/{farm_id}",
+            timeout=60
+        )
+        r.raise_for_status()
+        row = r.json()
+
+        lat = float(row["Latitude"])
+        lon = float(row["Longitude"])
+
+        # CSV has a point, so create a small monitoring AOI around it.
+        from shapely.geometry import Point
+        from shapely.ops import transform as shapely_transform
+        from pyproj import Transformer
+
+        zone = int((lon + 180) // 6) + 1
+        epsg = (32600 if lat >= 0 else 32700) + zone
+
+        to_utm = Transformer.from_crs(
+            "EPSG:4326",
+            f"EPSG:{epsg}",
+            always_xy=True
+        ).transform
+
+        to_wgs84 = Transformer.from_crs(
+            f"EPSG:{epsg}",
+            "EPSG:4326",
+            always_xy=True
+        ).transform
+
+        point_utm = shapely_transform(to_utm, Point(lon, lat))
+        roi_utm = point_utm.buffer(100)   # 100 m radius monitoring AOI
+        roi_wgs84 = shapely_transform(to_wgs84, roi_utm)
+
+        return {
+            "farm_id": str(row["Farm_ID"]),
+            "farm_name": str(row["Farm_ID"]),
+            "farmer_name": None,
+            "area_ha": None,
+            "geometry_wgs84": roi_wgs84,
+            "geometry_geojson": mapping(roi_wgs84),
+            "latitude": lat,
+            "longitude": lon,
+            "crop": row.get("Crop"),
+            "soil_type": row.get("Soil_Type"),
+            "source": "csv",
+        }
+
+
+csv_registry = CSVDatasetRegistryClient(obs_cfg.FARM_API)
 
 
 class CDSEClient:
@@ -1893,8 +1957,50 @@ def process_observation(farm, scene, image_path, crop_name=None):
     # Robust vegetation-area calculation based on real NIR/Red NDVI.
     ndvi = (bands["nir"] - bands["red"]) / (bands["nir"] + bands["red"] + 1e-8)
     ndvi = np.clip(np.nan_to_num(ndvi, nan=0.0, posinf=1.0, neginf=-1.0), -1, 1)
+    # Save farm-clipped NDVI for the dashboard
+    with rasterio.open(image_path) as src:
+        farm_geom = farm["geometry_wgs84"]
 
-    valid = np.ones_like(ndvi, dtype=bool)
+        if src.crs is not None:
+            transformer = Transformer.from_crs(
+                "EPSG:4326",
+                src.crs,
+                always_xy=True
+            )
+            farm_geom = shapely_transform(
+                transformer.transform,
+                farm_geom
+            )
+
+        farm_mask = geometry_mask(
+            [mapping(farm_geom)],
+            out_shape=ndvi.shape,
+            transform=src.transform,
+            invert=True
+        )
+
+    ndvi_clipped = np.where(
+        farm_mask,
+        ndvi,
+        np.nan
+    ).astype(np.float32)
+
+    dashboard_dir = (
+        Path(__file__).resolve().parents[1]
+        / "dashboard"
+        / "data"
+        / "farms"
+        / farm["farm_id"]
+    )
+
+    dashboard_dir.mkdir(parents=True, exist_ok=True)
+
+    ndvi_path = dashboard_dir / "ndvi.npy"
+    np.save(ndvi_path, ndvi_clipped)
+
+    print(f"✅ Farm-clipped NDVI saved: {ndvi_path}")
+
+    valid = farm_mask.copy()
     if scl is not None:
         # Sentinel-2 SCL: 8/9/10 = cloud probabilities / cirrus; 3 = cloud shadow; 11 = snow/ice.
         valid &= ~np.isin(scl.astype(np.int16), [3, 8, 9, 10, 11])
@@ -2069,6 +2175,74 @@ def check_farm(farm_id: str, crop_name=None):
     _save_state(state)
     return result
 
+def check_csv_farm(farm_id: str, crop_name=None):
+    """Monitor a CSV farm using its Latitude/Longitude and Sentinel-2."""
+
+    farm = csv_registry.get_farm(farm_id)
+
+    state = _load_state()
+    state_key = f"csv:{farm_id}"
+    current = state.get(state_key, {})
+
+    scene = s2.search_newest(farm)
+
+    if scene is None:
+        print(f"ℹ️ No Sentinel-2 candidate available for CSV farm {farm_id}.")
+        return None
+
+    new_scene_id = scene.get("id")
+    old_scene_id = current.get("last_scene_id")
+
+    if new_scene_id and new_scene_id == old_scene_id:
+        print(f"✅ CSV farm {farm_id} already processed: {new_scene_id}")
+        return None
+
+    print(f"⬇️ Downloading Sentinel-2 scene for CSV farm {farm_id}...")
+
+    new_image_path = s2.download_bands(farm, scene)
+
+    new_quality = _calculate_observation_quality(
+        new_image_path,
+        scene
+    )
+
+    old_quality = _get_existing_quality(current)
+
+    if (
+        old_quality is not None
+        and new_quality["quality_score"] < old_quality - 0.05
+    ):
+        print("↩️ Existing CSV observation has better quality.")
+        try:
+            new_image_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None
+
+    result = process_observation(
+        farm,
+        scene,
+        new_image_path,
+        crop_name=crop_name or farm.get("crop")
+    )
+
+    scene_dt = datetime.fromisoformat(
+        scene["properties"]["datetime"].replace("Z", "+00:00")
+    )
+
+    state[state_key] = {
+        "last_observation_datetime": scene_dt.isoformat(),
+        "last_scene_id": scene.get("id"),
+        "last_image_path": str(new_image_path),
+        "last_carbon_score": result["carbon_score"],
+        "last_cloud_cover_pct": new_quality["cloud_cover_pct"],
+        "last_valid_pixel_pct": new_quality["valid_pixel_pct"],
+        "quality_score": new_quality["quality_score"],
+    }
+
+    _save_state(state)
+
+    return result
 
 def run_all_registered_farms_once(crop_name=None):
     farms = farm_registry.list_farms()
@@ -2089,13 +2263,74 @@ def run_scheduler(crop_name=None):
     print("🔄 GreenLedger Module 1 scheduler started")
     print(f"   Farm API: {obs_cfg.FARM_API}")
     print(f"   Check interval: {obs_cfg.CHECK_INTERVAL_HOURS} hours")
+
+    next_full_cycle = 0.0
+    known_registered_farms = set()
+    known_csv_farms = set()
+
     while True:
         try:
-            run_all_registered_farms_once(crop_name=crop_name)
-        except Exception as exc:
-            print(f"❌ Scheduler cycle error: {type(exc).__name__}: {exc}")
-        time.sleep(obs_cfg.CHECK_INTERVAL_HOURS * 3600)
+            now = time.time()
 
+            # Existing polygon farms
+            registered_farms = {
+                feature["properties"]["farm_id"]
+                for feature in farm_registry.list_farms()
+            }
+
+            # CSV farms
+            demo_farm_id = os.getenv("CSV_DEMO_FARM_ID", "FARM-001")
+            csv_farms = {demo_farm_id}
+
+            if now >= next_full_cycle:
+                print("\n🔄 Running scheduled farm cycle...")
+
+                run_all_registered_farms_once(
+                    crop_name=crop_name
+                )
+
+                next_full_cycle = (
+                    now + obs_cfg.CHECK_INTERVAL_HOURS * 3600
+                )
+
+            # New polygon farms
+            for farm_id in registered_farms - known_registered_farms:
+                print(f"\n🆕 New polygon farm detected: {farm_id}")
+                try:
+                    check_farm(
+                        farm_id,
+                        crop_name=crop_name
+                    )
+                except Exception as exc:
+                    print(
+                        f"❌ {farm_id}: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+            # New CSV farms
+            for farm_id in csv_farms - known_csv_farms:
+                print(f"\n🆕 New CSV farm detected: {farm_id}")
+                try:
+                    check_csv_farm(
+                        farm_id,
+                        crop_name=crop_name
+                    )
+                except Exception as exc:
+                    print(
+                        f"❌ CSV {farm_id}: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+            known_registered_farms = registered_farms
+            known_csv_farms = csv_farms
+
+        except Exception as exc:
+            print(
+                f"❌ Scheduler error: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        time.sleep(60)
 
 print("✅ Module 1 automation layer ready")
 print("   Note: Module 1 reads farms from Module 0's database-backed API.")

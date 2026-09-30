@@ -5,3 +5,4 @@ numpy>=2.0
 pandas>=2.2
 scikit-learn>=1.5
 matplotlib>=3.9
+catboost>=1.2.8

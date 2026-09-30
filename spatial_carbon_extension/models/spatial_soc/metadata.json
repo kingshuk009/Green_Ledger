@@ -1,0 +1,43 @@
+{
+  "feature_columns": [
+    "Latitude",
+    "Longitude",
+    "Crop",
+    "Nitrogen - High",
+    "Nitrogen - Medium",
+    "Nitrogen - Low",
+    "Phosphorous - High",
+    "Phosphorous - Medium",
+    "Phosphorous - Low",
+    "Potassium - High",
+    "Potassium - Medium",
+    "Potassium - Low",
+    "pH - Acidic",
+    "pH - Neutral",
+    "pH - Alkaline",
+    "Irrigation_Type",
+    "Fertilizer_Used(tons)",
+    "Pesticide_Used(kg)",
+    "Yield(tons)",
+    "Soil_Type",
+    "Season",
+    "Water_Usage(cubic meters)"
+  ],
+  "categorical_columns": [
+    "Crop",
+    "Irrigation_Type",
+    "Soil_Type",
+    "Season"
+  ],
+  "metadata": {
+    "target": "SOC_Stock(tC/ha)",
+    "validation": "spatial GroupKFold",
+    "cell_deg": 0.5,
+    "categorical_columns": [
+      "Crop",
+      "Irrigation_Type",
+      "Soil_Type",
+      "Season"
+    ]
+  }
+}

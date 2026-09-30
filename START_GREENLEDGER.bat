@@ -42,7 +42,7 @@ REM ---- Start Module 1 ----
 echo Starting Module 1 (Satellite MRV)...
 start "GreenLedger - Module 1" cmd /k ^
 cd /d "%~dp0module1" ^&^& ^
-".venv\Scripts\python.exe" module1.py
+".venv\Scripts\python.exe" module1.py --scheduler
 
 REM ---- Start Dashboard ----
 echo Starting Dashboard...
@@ -53,12 +53,9 @@ cd /d "%~dp0dashboard" ^&^& ^
 REM ---- Give all services time to start ----
 timeout /t 5 /nobreak >nul
 
-REM ---- Open browser tabs ----
-echo Opening browser...
+REM ---- Open browser ----
+echo Opening Register Farm page...
 start "" "http://127.0.0.1:8000"
-timeout /t 2 /nobreak >nul
-start "" "http://127.0.0.1:8010/static/index.html?farm_id=FARM_20260901171202851780"
-
 echo.
 echo ==========================================
 echo  GreenLedger is running!

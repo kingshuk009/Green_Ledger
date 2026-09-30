@@ -62,6 +62,7 @@ def build_carbon_asset(farm_id: str, farm: dict, observations: list[dict], input
         "ndvi_observation_count": len(normalized),
         "baseline_soc_tC_ha": baseline,
         "project_soc_tC_ha": project,
+        "actual_soc_tC_ha": _num(inputs.get("actual_soc_tC_ha")),
         "soc_change_tC_ha": soc_change,
         "estimated_removal_tCO2e": co2e,
         "conservative_removal_tCO2e": conservative,

@@ -19,7 +19,16 @@ class SpatialSOCModel:
             loss_function="RMSE", eval_metric="RMSE", iterations=1200,
             depth=7, learning_rate=0.03, l2_leaf_reg=5,
             random_seed=42, verbose=False)
-        self.model.fit(X, y, cat_features=idx)
+        X = X.copy()
+
+        for c in self.categorical_columns:
+            X[c] = X[c].fillna("Missing").astype(str)
+
+        self.model.fit(
+            X,
+            y,
+            cat_features=self.categorical_columns
+            )
         return self
 
     def predict(self, X):

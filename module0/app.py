@@ -4,6 +4,8 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+import csv
+
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -14,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 FARM_DIR = DATA_DIR / "farms"
 DB_PATH = DATA_DIR / "greenledger.db"
+CSV_PATH = DATA_DIR / "CropDataset-Enhanced_fixed.csv"
 FARM_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -218,73 +221,169 @@ def get_farm_boundary(farm_id: str):
     return {"farm_id": row["farm_id"], "geometry": json.loads(row["geometry_json"]), "crs": "EPSG:4326"}
 
 
+# ── CSV dataset endpoints ────────────────────────────────────
+
+@app.get("/api/dataset/farms")
+def dataset_farms():
+    if not CSV_PATH.exists():
+        raise HTTPException(404, "Farm CSV dataset not found.")
+
+    farms = []
+
+    with CSV_PATH.open(
+        "r",
+        newline="",
+        encoding="utf-8-sig"
+    ) as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            try:
+                latitude = float(row["Latitude"])
+                longitude = float(row["Longitude"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            farms.append({
+                "farm_id": str(row["Farm_ID"]),
+                "latitude": latitude,
+                "longitude": longitude,
+                "crop": row.get("Crop", ""),
+                "soil_type": row.get("Soil_Type", ""),
+                "region": row.get("Region", "")
+            })
+
+    return {
+        "count": len(farms),
+        "farms": farms
+    }
+
+
+@app.get("/api/dataset/farms/{farm_id}")
+def dataset_farm(farm_id: str):
+    if not CSV_PATH.exists():
+        raise HTTPException(404, "Farm CSV dataset not found.")
+
+    with CSV_PATH.open(
+        "r",
+        newline="",
+        encoding="utf-8-sig"
+    ) as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            if str(row.get("Farm_ID", "")).strip() == farm_id:
+                try:
+                    row["Latitude"] = float(row["Latitude"])
+                    row["Longitude"] = float(row["Longitude"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+
+                return row
+
+    raise HTTPException(404, "Dataset farm not found.")
+
 @app.post("/api/observations")
 def save_observation(payload: ObservationCreate):
-    # Confirm the farm exists before storing an observation.
+    now = datetime.now(timezone.utc).isoformat()
+
     with get_db() as conn:
-        farm = conn.execute("SELECT farm_id FROM farms WHERE farm_id = ?", (payload.farm_id,)).fetchone()
-        if farm is None:
-            raise HTTPException(404, "Farm not found.")
-        now = datetime.now(timezone.utc).isoformat()
         try:
             cursor = conn.execute(
                 """INSERT INTO observations
-                (farm_id, observation_date, crop, image_path, satellite_collection,
-                 scene_id, cloud_cover_pct, mean_ndvi, vegetation_area_m2,
-                 vegetation_area_ha, vegetation_coverage_pct, vegetation_health,
-                 initial_masks, voted_masks, carbon_score, carbon_unit, area_source, created_at)
+                (farm_id, observation_date, crop, image_path,
+                 satellite_collection, scene_id, cloud_cover_pct,
+                 mean_ndvi, vegetation_area_m2, vegetation_area_ha,
+                 vegetation_coverage_pct, vegetation_health,
+                 initial_masks, voted_masks, carbon_score,
+                 carbon_unit, area_source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    payload.farm_id, payload.observation_date, payload.crop,
-                    payload.image_path, payload.satellite_collection, payload.scene_id,
-                    payload.cloud_cover_pct, payload.mean_ndvi, payload.vegetation_area_m2,
-                    payload.vegetation_area_ha, payload.vegetation_coverage_pct,
-                    payload.vegetation_health, payload.initial_masks, payload.voted_masks,
-                    payload.carbon_score, payload.carbon_unit, payload.area_source, now,
+                    payload.farm_id,
+                    payload.observation_date,
+                    payload.crop,
+                    payload.image_path,
+                    payload.satellite_collection,
+                    payload.scene_id,
+                    payload.cloud_cover_pct,
+                    payload.mean_ndvi,
+                    payload.vegetation_area_m2,
+                    payload.vegetation_area_ha,
+                    payload.vegetation_coverage_pct,
+                    payload.vegetation_health,
+                    payload.initial_masks,
+                    payload.voted_masks,
+                    payload.carbon_score,
+                    payload.carbon_unit,
+                    payload.area_source,
+                    now,
                 ),
             )
             conn.commit()
-        except sqlite3.IntegrityError as exc:
-            # Duplicate scene for the same farm is idempotent for scheduler retries.
+
+        except sqlite3.IntegrityError:
             if payload.scene_id:
                 existing = conn.execute(
-                    "SELECT * FROM observations WHERE farm_id = ? AND scene_id = ?",
+                    """SELECT * FROM observations
+                       WHERE farm_id = ? AND scene_id = ?""",
                     (payload.farm_id, payload.scene_id),
                 ).fetchone()
+
                 if existing:
-                    return {"status": "already_exists", "observation": dict(existing)}
-            raise HTTPException(409, f"Observation could not be stored: {exc}")
+                    return {
+                        "status": "already_exists",
+                        "observation": dict(existing),
+                    }
+
+            raise HTTPException(
+                409,
+                "Observation already exists."
+            )
 
         row = conn.execute(
-            "SELECT * FROM observations WHERE observation_id = ?", (cursor.lastrowid,)
+            "SELECT * FROM observations WHERE observation_id = ?",
+            (cursor.lastrowid,),
         ).fetchone()
 
-    return {"status": "created", "observation": dict(row)}
-
+    return {
+        "status": "created",
+        "observation": dict(row),
+    }
 
 @app.get("/api/farms/{farm_id}/observations")
 def list_observations(farm_id: str):
     with get_db() as conn:
-        farm = conn.execute("SELECT farm_id FROM farms WHERE farm_id = ?", (farm_id,)).fetchone()
-        if farm is None:
-            raise HTTPException(404, "Farm not found.")
         rows = conn.execute(
             "SELECT * FROM observations WHERE farm_id = ? ORDER BY observation_date DESC",
             (farm_id,),
         ).fetchall()
-    return {"farm_id": farm_id, "count": len(rows), "observations": [dict(r) for r in rows]}
+
+    return {
+        "farm_id": farm_id,
+        "count": len(rows),
+        "observations": [dict(r) for r in rows],
+    }
 
 
 @app.get("/api/farms/{farm_id}/observations/latest")
 def latest_observation(farm_id: str):
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM observations WHERE farm_id = ? ORDER BY observation_date DESC LIMIT 1",
+            "SELECT * FROM observations WHERE farm_id = ? "
+            "ORDER BY observation_date DESC LIMIT 1",
             (farm_id,),
         ).fetchone()
+
     if row is None:
-        return {"farm_id": farm_id, "observation": None}
-    return {"farm_id": farm_id, "observation": dict(row)}
+        return {
+            "farm_id": farm_id,
+            "observation": None
+        }
+
+    return {
+        "farm_id": farm_id,
+        "observation": dict(row)
+    }
 # Add these endpoints to the END of app.py in module0
 # (before the last line)
 
